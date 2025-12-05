@@ -1,4 +1,41 @@
-# Dockerfile for Excel Analytics Backend
+# Multi-stage Dockerfile for Excel Analytics Backend
+# Build from project root: docker build -f backend/Dockerfile -t excel-analytics .
+
+# Stage 1: Build Frontend
+FROM node:18-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+
+# Copy frontend package files
+COPY frontend/package*.json ./
+
+# Install frontend dependencies (including dev dependencies for build)
+RUN npm ci
+
+# Copy frontend source code
+COPY frontend/ ./
+
+# Build frontend
+RUN npm run build
+
+# Stage 2: Setup Backend
+FROM node:18-alpine AS backend-setup
+
+WORKDIR /app/backend
+
+# Copy backend package files
+COPY backend/package*.json ./
+
+# Install backend dependencies
+RUN npm ci --only=production
+
+# Copy backend source code
+COPY backend/ ./
+
+# Copy built frontend from previous stage to backend/build
+COPY --from=frontend-builder /app/frontend/dist ./build
+
+# Stage 3: Final Production Image
 FROM node:18-alpine
 
 # Install curl for health checks
@@ -10,14 +47,8 @@ WORKDIR /app
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm ci --only=production
-
-# Copy backend source code and build files
-COPY --chown=nodejs:nodejs . .
+# Copy backend files from setup stage
+COPY --from=backend-setup --chown=nodejs:nodejs /app/backend /app
 
 # Switch to non-root user
 USER nodejs
